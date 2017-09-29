@@ -5,6 +5,7 @@
 #include <RTCZero.h>
 #include <FlashStorage.h>
 #include <LiquidCrystal.h>
+#include <Time.h> //funciones Time
 //#include "ToolFunctions.h"
 //#include <TelegramBot.h>
 
@@ -36,9 +37,10 @@ byte seconds = 0;
 byte minutes = 0;
 byte hours = 0;
 
-byte day = 17;
-byte month = 11;
-byte year = 16;
+//Eliminado el set de fecha
+//byte day = 17;
+//byte month = 11;
+//byte year = 16;
 
 int netIndex, passIndex;
 String network, password;
@@ -115,6 +117,7 @@ void loop() {
     rtc.setHours(hours);
     rtc.setMinutes(minutes);
     rtc.setSeconds(seconds);
+    // aca se debe encontrar las tunciones de Time.h?
     rtc.setDay(day);
     rtc.setMonth(month);
     rtc.setYear(year);
@@ -228,7 +231,7 @@ void timeNpt() {
     unsigned long epoch = secsSince1900 - seventyYears;
     // print Unix time:
     // Serial.println(epoch);
-
+    setTime(epoch); // Set time de las funciones Time.h
 
     // print the hour, minute and second:
     //Serial.print("La hora UTC es: ");       // UTC is the time at Greenwich Meridian (GMT)
