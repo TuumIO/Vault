@@ -37,10 +37,9 @@ byte seconds = 0;
 byte minutes = 0;
 byte hours = 0;
 
-//Eliminado el set de fecha
-//byte day = 17;
-//byte month = 11;
-//byte year = 16;
+byte days = 0;
+byte months = 0;
+byte years = 0;
 
 int netIndex, passIndex;
 String network, password;
@@ -118,9 +117,9 @@ void loop() {
     rtc.setMinutes(minutes);
     rtc.setSeconds(seconds);
     // aca se debe encontrar las tunciones de Time.h?
-    rtc.setDay(day);
-    rtc.setMonth(month);
-    rtc.setYear(year);
+    rtc.setDay(days);
+    rtc.setMonth(months);
+    rtc.setYear(years);
     needTime = false;
     pFecha();
   }
@@ -232,7 +231,13 @@ void timeNpt() {
     // print Unix time:
     // Serial.println(epoch);
     setTime(epoch); // Set time de las funciones Time.h
-
+    hours = hour();
+    minutes = minute();
+    seconds = second();
+    days = day();
+    months = month();
+    years = year();
+    /*
     // print the hour, minute and second:
     //Serial.print("La hora UTC es: ");       // UTC is the time at Greenwich Meridian (GMT)
     hours = (epoch  % 86400L) / 3600;
@@ -255,6 +260,7 @@ void timeNpt() {
     //String sseconds = String(seconds, DEC);
     //Serial.println(seconds); // print the second
     //String ttotal = String(shours + ":" + sminutes + ":" + sseconds);
+    */
 }
   // wait ten seconds before asking for the time again
   //delay(10000);
