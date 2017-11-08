@@ -5,6 +5,7 @@
 #include <RTCZero.h>
 #include <FlashStorage.h>
 #include <LiquidCrystal.h>
+#include <Time.h> //funciones Time
 //#include "ToolFunctions.h"
 //#include <TelegramBot.h>
 
@@ -16,7 +17,7 @@ int ledState = LOW;
 const int ledPin =  6;                      // MKR1000 Led Pin es 6
 //const int buttonPin = 4;
 unsigned int localPort = 2390;              // local port to listen on
-char packetBuffer[255];                     //buffer to hold incoming packet
+char packetBufudp[255];                     //buffer to hold incoming packet
 int netCounter = 0;                         //Contador conexion red
 //int buttonState = 0;                        // current state of the button
 volatile byte lastLedState = LOW;                     // previous state of the button
@@ -29,16 +30,11 @@ int numRuns = 0;      // Execution count, so this doesn't run forever
 int numRuns2 = 0;   // Execution count, so this doesn't run forever
 
 IPAddress timeServer(129, 6, 15, 28);   // time.nist.gov NTP server
-const int NTP_PACKET_SIZE = 48;         // NTP time stamp is in the first 48 bytes of the message
-byte pBuffernpt[ NTP_PACKET_SIZE];      //buffer to hold incoming and outgoing packets
 
-byte seconds = 0;
-byte minutes = 0;
-byte hours = 0;
+const int NTP_PACKET_SIZE = 48; // NTP time is in the first 48 bytes of message
+byte packetBuffer[NTP_PACKET_SIZE]; //buffer to hold incoming & outgoing packets
 
-byte day = 17;
-byte month = 11;
-byte year = 16;
+const int timeZone = 1;     // Central European Time
 
 int netIndex, passIndex;
 String network, password;
@@ -65,8 +61,6 @@ typedef struct {
 FlashStorage(my_flash_store, netconf);
 netconf netUser;
 
-RTCZero rtc;
-
 WiFiUDP Udp;
 
 void setup() {
@@ -83,7 +77,7 @@ void setup() {
     while (!Serial) {
       ;                                         // wait for serial port to connect. Needed for native USB port only
     }
-  */  
+  */
   if (netUser.valid == true){
     needCredentials = false;
     needWiFi = true;
@@ -101,6 +95,9 @@ void setup() {
     server.begin();
   }
 }
+
+//time_t prevDisplay = 0; // when the digital clock was displayed
+
 void loop() {
   digitalWrite(ledPin, lastLedState);
   if (needCredentials) {
@@ -110,14 +107,9 @@ void loop() {
     getWiFi(); 
   }
   if (needTime) {
-    timeNpt();
-    rtc.begin();
-    rtc.setHours(hours);
-    rtc.setMinutes(minutes);
-    rtc.setSeconds(seconds);
-    rtc.setDay(day);
-    rtc.setMonth(month);
-    rtc.setYear(year);
+    setSyncProvider(getNtpTime);
+    //prevDisplay = now();
+    //Serial.println(prevDisplay);
     needTime = false;
     pFecha();
   }
@@ -173,8 +165,8 @@ void txUdp() {
   int packetSize = Udp.parsePacket();
   if (packetSize)
   {
-    int len = Udp.read(packetBuffer, 255);
-    mensajeUdf = packetBuffer;
+    int len = Udp.read(packetBufudp, 255);
+    mensajeUdf = packetBufudp;
     if (mensajeUdf.equals(ctrlUdf)) {
       packetSize = 0;
       if (lastLedState == HIGH) {
@@ -186,9 +178,10 @@ void txUdp() {
         lastLedState = HIGH;
       }
       pFecha();
-      thetimeis();      
+      thetimeis();
+      fechaComp();
     }
-    for(int i=0;i<255;i++) packetBuffer[i] = 0;
+    for(int i=0;i<255;i++) packetBufudp[i] = 0;
     mensajeUdf = "";
     Udp.beginPacket(Udp.remoteIP(), Udp.remotePort());
     Udp.write(ReplyBuffer);
@@ -200,93 +193,49 @@ void printWifiData() {
   lcd.setCursor(0, 1);
   lcd.print(ip);
 }
-void timeNpt() {
-  sendNTPpacket(timeServer); // send an NTP packet to a time server
-  // wait to see if a reply is available
-  delay(1000);
-  if ( Udp.parsePacket() ) {
-    //Serial.println("packet received");
-    // We've received a packet, read the data from it
-    Udp.read(pBuffernpt, NTP_PACKET_SIZE); // read the packet into the buffer
-
-    //the timestamp starts at byte 40 of the received packet and is four bytes,
-    // or two words, long. First, esxtract the two words:
-
-    unsigned long highWord = word(pBuffernpt[40], pBuffernpt[41]);
-    unsigned long lowWord = word(pBuffernpt[42], pBuffernpt[43]);
-    // combine the four bytes (two words) into a long integer
-    // this is NTP time (seconds since Jan 1 1900):
-    unsigned long secsSince1900 = highWord << 16 | lowWord;
-    //Serial.print("Seconds since Jan 1 1900 = " );
-    //Serial.println(secsSince1900);
-
-    // now convert NTP time into everyday time:
-    // Serial.print("Unix time = ");
-    // Unix time starts on Jan 1 1970. In seconds, that's 2208988800:
-    const unsigned long seventyYears = 2208988800UL;
-    // subtract seventy years:
-    unsigned long epoch = secsSince1900 - seventyYears;
-    // print Unix time:
-    // Serial.println(epoch);
-
-
-    // print the hour, minute and second:
-    //Serial.print("La hora UTC es: ");       // UTC is the time at Greenwich Meridian (GMT)
-    hours = (epoch  % 86400L) / 3600;
-    //String shours = String(hours, DEC);
-    //Serial.print(hours); // print the hour (86400 equals secs per day)
-    //Serial.print(':');
-    if ( ((epoch % 3600) / 60) < 10 ) {
-      // In the first 10 minutes of each hour, we'll want a leading '0'
-      //Serial.print('0');
+time_t getNtpTime()
+{
+  while (Udp.parsePacket() > 0) ; // discard any previously received packets
+  sendNTPpacket(timeServer);
+  uint32_t beginWait = millis();
+  while (millis() - beginWait < 1500) {
+    int size = Udp.parsePacket();
+    if (size >= NTP_PACKET_SIZE) {
+      Udp.read(packetBuffer, NTP_PACKET_SIZE);  // read packet into the buffer
+      unsigned long secsSince1900;
+      // convert four bytes starting at location 40 to a long integer
+      secsSince1900 =  (unsigned long)packetBuffer[40] << 24;
+      secsSince1900 |= (unsigned long)packetBuffer[41] << 16;
+      secsSince1900 |= (unsigned long)packetBuffer[42] << 8;
+      secsSince1900 |= (unsigned long)packetBuffer[43];
+      return secsSince1900 - 2208988800UL + timeZone * SECS_PER_HOUR;
     }
-    minutes = (epoch  % 3600) / 60;
-    //String sminutes = String(minutes, DEC);
-    //Serial.print(minutes); // print the minute (3600 equals secs per minute)
-    //Serial.print(':');
-    if ( (epoch % 60) < 10 ) {
-      // In the first 10 seconds of each minute, we'll want a leading '0'
-      //Serial.print('0');
-    }
-    seconds = epoch % 60;
-    //String sseconds = String(seconds, DEC);
-    //Serial.println(seconds); // print the second
-    //String ttotal = String(shours + ":" + sminutes + ":" + sseconds);
-}
-  // wait ten seconds before asking for the time again
-  //delay(10000);
+  }
+  return 0; // return 0 if unable to get the time
 }
 
 // send an NTP request to the time server at the given address
-unsigned long sendNTPpacket(IPAddress& address)
+void sendNTPpacket(IPAddress &address)
 {
-  //Serial.println("1");
   // set all bytes in the buffer to 0
-  memset(pBuffernpt, 0, NTP_PACKET_SIZE);
+  memset(packetBuffer, 0, NTP_PACKET_SIZE);
   // Initialize values needed to form NTP request
   // (see URL above for details on the packets)
-  //Serial.println("2");
-  pBuffernpt[0] = 0b11100011;   // LI, Version, Mode
-  pBuffernpt[1] = 0;     // Stratum, or type of clock
-  pBuffernpt[2] = 6;     // Polling Interval
-  pBuffernpt[3] = 0xEC;  // Peer Clock Precision
+  packetBuffer[0] = 0b11100011;   // LI, Version, Mode
+  packetBuffer[1] = 0;     // Stratum, or type of clock
+  packetBuffer[2] = 6;     // Polling Interval
+  packetBuffer[3] = 0xEC;  // Peer Clock Precision
   // 8 bytes of zero for Root Delay & Root Dispersion
-  pBuffernpt[12]  = 49;
-  pBuffernpt[13]  = 0x4E;
-  pBuffernpt[14]  = 49;
-  pBuffernpt[15]  = 52;
-
-  //Serial.println("3");
-
+  packetBuffer[12]  = 49;
+  packetBuffer[13]  = 0x4E;
+  packetBuffer[14]  = 49;
+  packetBuffer[15]  = 52;
   // all NTP fields have been given values, now
-  // you can send a packet requesting a timestamp:
+  // you can send a packet requesting a timestamp:                 
   Udp.beginPacket(address, 123); //NTP requests are to port 123
-  //Serial.println("4");
-  Udp.write(pBuffernpt, NTP_PACKET_SIZE);
-  //Serial.println("5");
+  Udp.write(packetBuffer, NTP_PACKET_SIZE);
   Udp.endPacket();
-  //Serial.println("6");
- }
+}
 
 void printAPStatus() {
   //Serial.print("SSID: ");
@@ -353,9 +302,9 @@ void getCredentials() {
   }
 }
 void pFecha() {
-  int evDay = rtc.getDay();
-  int evMonth = rtc.getMonth();
-  int evYear = rtc.getYear();
+  int evDay = day();
+  int evMonth = month();
+  int evYear = year();
   String sDay = String(evDay, DEC);
   String sMonth = String(evMonth, DEC);
   String sYear = String(evYear, DEC);
@@ -369,9 +318,9 @@ void pFecha() {
   lcd.clear();
 }
 void thetimeis(){
-  int evHours = rtc.getHours();
-  int evMinutes = rtc.getMinutes();
-  int evSeconds = rtc.getSeconds();
+  int evHours = hour();
+  int evMinutes = minute();
+  int evSeconds = second();
   String shours = String(evHours, DEC);
   String sminutes = String(evMinutes, DEC);
   String sseconds = String(evSeconds, DEC);
@@ -383,4 +332,24 @@ void thetimeis(){
   lcd.print(ttime);
   delay(2000);
   lcd.clear();
+}
+void fechaComp() {
+  int evDay = day();
+  int evMonth = month();
+  int evYear = year();
+  if ((evYear == 2033) && (evMonth == 12) && (evDay == 22) ) {
+    lcd.display();
+    lcd.clear();
+    lcd.print("Hoy es el dia!");
+    delay(2000);
+    lcd.clear();
+  }
+  else
+  {
+    lcd.display();
+    lcd.clear();
+    lcd.print("Hoy no es :(");
+    delay(2000);
+    lcd.clear();
+  }
 }
