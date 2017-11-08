@@ -29,7 +29,7 @@ char sysStatus[8];                      //Status sistema
 int numRuns = 0;      // Execution count, so this doesn't run forever
 int numRuns2 = 0;   // Execution count, so this doesn't run forever
 
-IPAddress timeServer(132, 163, 4, 101); 
+IPAddress timeServer(129, 6, 15, 28);   // time.nist.gov NTP server
 
 const int NTP_PACKET_SIZE = 48; // NTP time is in the first 48 bytes of message
 byte packetBuffer[NTP_PACKET_SIZE]; //buffer to hold incoming & outgoing packets
@@ -61,8 +61,6 @@ typedef struct {
 FlashStorage(my_flash_store, netconf);
 netconf netUser;
 
-RTCZero rtc;
-
 WiFiUDP Udp;
 
 void setup() {
@@ -79,7 +77,7 @@ void setup() {
     while (!Serial) {
       ;                                         // wait for serial port to connect. Needed for native USB port only
     }
-  */  
+  */
   if (netUser.valid == true){
     needCredentials = false;
     needWiFi = true;
@@ -98,7 +96,7 @@ void setup() {
   }
 }
 
-time_t prevDisplay = 0; // when the digital clock was displayed
+//time_t prevDisplay = 0; // when the digital clock was displayed
 
 void loop() {
   digitalWrite(ledPin, lastLedState);
@@ -110,7 +108,8 @@ void loop() {
   }
   if (needTime) {
     setSyncProvider(getNtpTime);
-    prevDisplay = now();
+    //prevDisplay = now();
+    //Serial.println(prevDisplay);
     needTime = false;
     pFecha();
   }
@@ -179,7 +178,8 @@ void txUdp() {
         lastLedState = HIGH;
       }
       pFecha();
-      thetimeis();      
+      thetimeis();
+      fechaComp();
     }
     for(int i=0;i<255;i++) packetBufudp[i] = 0;
     mensajeUdf = "";
@@ -196,13 +196,11 @@ void printWifiData() {
 time_t getNtpTime()
 {
   while (Udp.parsePacket() > 0) ; // discard any previously received packets
-  //Serial.println("Transmit NTP Request");
   sendNTPpacket(timeServer);
   uint32_t beginWait = millis();
   while (millis() - beginWait < 1500) {
     int size = Udp.parsePacket();
     if (size >= NTP_PACKET_SIZE) {
-      //Serial.println("Receive NTP Response");
       Udp.read(packetBuffer, NTP_PACKET_SIZE);  // read packet into the buffer
       unsigned long secsSince1900;
       // convert four bytes starting at location 40 to a long integer
@@ -213,7 +211,6 @@ time_t getNtpTime()
       return secsSince1900 - 2208988800UL + timeZone * SECS_PER_HOUR;
     }
   }
-  //Serial.println("No NTP Response :-(");
   return 0; // return 0 if unable to get the time
 }
 
@@ -336,4 +333,23 @@ void thetimeis(){
   delay(2000);
   lcd.clear();
 }
-
+void fechaComp() {
+  int evDay = day();
+  int evMonth = month();
+  int evYear = year();
+  if ((evYear == 2033) && (evMonth == 12) && (evDay == 22) ) {
+    lcd.display();
+    lcd.clear();
+    lcd.print("Hoy es el dia!");
+    delay(2000);
+    lcd.clear();
+  }
+  else
+  {
+    lcd.display();
+    lcd.clear();
+    lcd.print("Hoy no es :(");
+    delay(2000);
+    lcd.clear();
+  }
+}
